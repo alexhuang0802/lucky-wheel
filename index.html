@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>幸運大轉盤</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Huninn&family=Noto+Sans+TC:wght@400;500;700&family=DM+Mono:wght@500&display=swap">
+<style>
+/* Layout: wheel stage on the left, setup + results panel on the right; stacks on phones */
+:root {
+  --bg: #eef1f8;
+  --surface: #ffffff;
+  --line: #d6dbea;
+  --ink: #1b1f3b;
+  --muted: #5d6385;
+  --accent: #e23d4b;
+  --gold: #f2b705;
+  --s1: #e0a100; --s2: #16a34a; --s3: #24306b; --s4: #dc2626; --s5: #0f8b8d; --s6: #b5651d;
+  --bull: #16a34a; --bear: #dc2626; --chart-alpha: .16;
+  --seg-line: #ffffff;
+  --font-display: "Huninn", "Noto Sans TC", system-ui, sans-serif;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121429; --surface: #1c1f3d; --line: #2e3360; --ink: #eef0ff; --muted: #9aa0c8;
+    --accent: #ff5a66; --gold: #ffc933; --seg-line: #121429; color-scheme: dark;
+    --bull: #22c55e; --bear: #f04444; --chart-alpha: .22; --s3: #3b4aa8;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121429; --surface: #1c1f3d; --line: #2e3360; --ink: #eef0ff; --muted: #9aa0c8;
+  --accent: #ff5a66; --gold: #ffc933; --seg-line: #121429; color-scheme: dark;
+  --bull: #22c55e; --bear: #f04444; --chart-alpha: .22; --s3: #3b4aa8;
+}
+* { box-sizing: border-box; }
+#bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.wrap { position: relative; z-index: 1; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+  padding-block: 24px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 24px; }
+header h1 { font-family: var(--font-display); font-size: clamp(28px, 5vw, 40px); margin: 0; line-height: 1.15; letter-spacing: .02em; text-wrap: balance; }
+header h1 span { color: var(--accent); }
+header p { margin: 4px 0 0; color: var(--muted); }
+.main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 820px) { .main { grid-template-columns: minmax(0, 1fr); } }
+
+/* Stage */
+.stage { display: grid; gap: 18px; justify-items: center; }
+.wheel-box { position: relative; width: min(100%, 520px); aspect-ratio: 1; max-width: 100%; }
+#wheel { width: 100%; height: 100%; display: block; }
+.pointer {
+  position: absolute; left: 50%; top: -6px; transform: translateX(-50%); width: 36px; height: 46px; z-index: 2;
+  filter: drop-shadow(0 3px 3px rgba(0,0,0,.25));
+}
+.pointer svg { width: 100%; height: 100%; display: block; }
+.hub {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 21%; aspect-ratio: 1; border-radius: 50%; border: 5px solid var(--surface);
+  background: linear-gradient(145deg, #ffe58f, #f2b705 45%, #a8780a); color: #3a2a00; font-family: var(--font-display); font-size: clamp(16px, 3.6vw, 26px);
+  cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.25); transition: transform .15s;
+}
+.hub:hover:not(:disabled) { transform: translate(-50%, -50%) scale(1.06); }
+.hub:disabled { cursor: default; filter: saturate(.6); }
+.hub:focus-visible, button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+.turn { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; justify-content: center; width: 100%; }
+.turn label { color: var(--muted); font-size: 14px; }
+select {
+  font: inherit; font-size: 16px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); min-width: 0; max-width: 100%;
+}
+.spin {
+  font-family: var(--font-display); font-size: 20px; padding: 10px 28px; border-radius: 999px; border: 0;
+  background: var(--accent); color: #fff; cursor: pointer; letter-spacing: .08em;
+}
+.spin:disabled { opacity: .5; cursor: default; }
+.banner {
+  width: 100%; max-width: 520px; text-align: center; padding: 14px 16px; border-radius: 14px;
+  border: 2px dashed var(--line); color: var(--muted); min-height: 64px; display: grid; place-items: center;
+}
+.banner.win { border: 2px solid var(--gold); background: var(--surface); color: var(--ink); animation: pop .5s ease-out; }
+.banner b { font-family: var(--font-display); font-weight: 400; font-size: 24px; color: var(--accent); }
+@keyframes pop { from { transform: scale(.92); } to { transform: scale(1); } }
+
+/* Panel */
+.panel { display: grid; gap: 18px; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.card h2 { margin: 0; font-size: 16px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.card h2 small { font-weight: 400; color: var(--muted); font-size: 13px; font-family: var(--font-mono); }
+.seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--bg); border-radius: 12px; padding: 4px; gap: 4px; }
+.seg button { font: inherit; border: 0; border-radius: 9px; padding: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 460px) { .inputs { grid-template-columns: 1fr; } }
+.field { display: grid; gap: 6px; min-width: 0; }
+.field label { font-weight: 700; font-size: 14px; display: flex; justify-content: space-between; gap: 6px; }
+.field label span { font-weight: 400; color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
+textarea {
+  font: inherit; font-size: 15px; width: 100%; min-height: 190px; resize: vertical; padding: 10px 12px;
+  border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); line-height: 1.6;
+}
+.hint { margin: 0; font-size: 13px; color: var(--muted); }
+.hint code { font-family: var(--font-mono); background: var(--bg); padding: 1px 5px; border-radius: 5px; }
+.opts { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; }
+.opts label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.opts input { width: 17px; height: 17px; accent-color: var(--accent); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+.ghost {
+  font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 9px; border: 1px solid var(--line);
+  background: transparent; color: var(--ink); cursor: pointer;
+}
+.ghost:hover { border-color: var(--muted); }
+.ghost.danger { color: var(--accent); }
+.ghost:disabled { opacity: .45; cursor: default; }
+ol.results { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; max-height: 320px; overflow-y: auto; }
+ol.results li { display: grid; grid-template-columns: 2.2em minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 8px; background: var(--bg); }
+ol.results .n { font-family: var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+ol.results .p { font-weight: 700; overflow-wrap: anywhere; }
+ol.results .z { color: var(--accent); text-align: right; overflow-wrap: anywhere; }
+.empty { color: var(--muted); font-size: 14px; margin: 0; }
+.mute { position: absolute; right: 0; bottom: 0; }
+#confetti { position: fixed; inset: 0; pointer-events: none; z-index: 20; width: 100%; height: 100%; }
+@media (prefers-reduced-motion: reduce) { .banner.win { animation: none; } .hub { transition: none; } }
+</style>
+</head>
+<body>
+
+<canvas id="bg" aria-hidden="true"></canvas>
+<div class="wrap">
+  <header>
+    <h1>幸運<span>大轉盤</span></h1>  </header>
+
+  <div class="main">
+    <section class="stage" aria-label="轉盤">
+      <div class="wheel-box">
+        <div class="pointer" aria-hidden="true">
+          <svg viewBox="0 0 36 46"><path d="M18 46 L3 14 A16 16 0 1 1 33 14 Z" fill="var(--gold)"/><circle cx="18" cy="15" r="6" fill="var(--surface)"/></svg>
+        </div>
+        <canvas id="wheel" role="img" aria-label="轉盤"></canvas>
+        <button class="hub" id="hub" type="button" aria-label="開始轉">GO</button>
+        <button class="ghost mute" id="mute" type="button" aria-pressed="false">🔊 音效</button>
+      </div>
+      <div class="turn">
+        <label for="who" id="whoLabel">這輪要抽的獎</label>
+        <select id="who"></select>
+        <button class="spin" id="spin" type="button">開轉！</button>
+      </div>
+      <div class="banner" id="banner" aria-live="polite">選好這輪要抽的獎，按下開轉</div>
+    </section>
+
+    <aside class="panel">
+      <div class="card">
+        <h2>獎項與抽獎人</h2>
+        <div class="inputs">
+          <div class="field">
+            <label for="prizes">獎項 <span id="prizeCount"></span></label>
+            <textarea id="prizes" spellcheck="false"></textarea>
+          </div>
+          <div class="field">
+            <label for="people">抽獎人 <span id="peopleCount"></span></label>
+            <textarea id="people" spellcheck="false"></textarea>
+          </div>
+        </div>
+        <p class="hint">一行一個。獎項有好幾份就在後面加 <code>×3</code> 或 <code>*3</code>。獎項由大到小排，每個獎就是一條阻力線，越上面的獎要突破越多層。</p>
+        <div class="opts">
+          <label><input type="checkbox" id="unlimited"> 獎項無限量</label>
+          <label><input type="checkbox" id="repeat"> 同一人可重複中獎</label>
+        </div>
+        <div class="row">
+          <button class="ghost" id="shuffle" type="button">打亂抽獎人順序</button>
+          <button class="ghost" id="sample" type="button">載入範例</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>中獎名單 <small id="resCount"></small></h2>
+        <ol class="results" id="results"></ol>
+        <div class="row">
+          <button class="ghost" id="copy" type="button">複製名單</button>
+          <button class="ghost" id="undo" type="button">復原上一筆</button>
+          <button class="ghost danger" id="clear" type="button">清除全部結果</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+<canvas id="confetti" aria-hidden="true"></canvas>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const TAU = Math.PI * 2;
+  const KEY = 'lucky-wheel-v1';
+  const SAMPLE = {
+    prizes: '頭獎 iPad\n二獎 AirPods ×2\n三獎 星巴克禮券 ×3\n參加獎 ×4',
+    people: '小明\n小華\n阿宏\n佳佳\n志豪\n雅婷\n宗翰\n怡君\n建宏\n淑芬'
+  };
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  let state = { ...SAMPLE, mode: 'prize', unlimited: false, repeat: false, muted: false, results: [] };
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s) state = { ...state, ...s }; } catch (e) {}
+  state.mode = 'person'; // the wheel always shows people; the prize is picked before each spin
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+
+  let rot = 0, spinning = false, segs = [];
+
+  const parsePrizes = () => state.prizes.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const m = l.match(/^(.*?)\s*[x×*＊]\s*(\d+)$/i);
+    return m && m[1] ? { name: m[1].trim(), qty: Math.max(1, +m[2]) } : { name: l, qty: 1 };
+  });
+  const parsePeople = () => [...new Set(state.people.split('\n').map(l => l.trim()).filter(Boolean))];
+
+  function prizeStock() {
+    return parsePrizes().map(p => {
+      const used = state.results.filter(r => r.prize === p.name).length;
+      return { ...p, left: state.unlimited ? p.qty : p.qty - used };
+    });
+  }
+  function peopleLeft() {
+    const all = parsePeople();
+    if (state.repeat) return all;
+    const won = new Set(state.results.map(r => r.person));
+    return all.filter(n => !won.has(n));
+  }
+
+  function buildSegs() {
+    const items = state.mode === 'prize'
+      ? prizeStock().filter(p => p.left > 0).map(p => ({ label: p.name, key: p.name, w: p.left, tag: p.left > 1 ? '×' + p.left : '' }))
+      : peopleLeft().map(n => ({ label: n, key: n, w: 1, tag: '' }));
+    const total = items.reduce((s, i) => s + i.w, 0);
+    let a = 0;
+    segs = items.map(i => { const s = { ...i, start: a, ang: i.w / total * TAU }; a += s.ang; return s; });
+  }
+
+  // ---------- drawing ----------
+  const cv = $('#wheel'), ctx = cv.getContext('2d');
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const lum = hex => {
+    const h = hex.replace('#', ''); const [r, g, b] = [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16) / 255);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  function fit(text, max) {
+    if (ctx.measureText(text).width <= max) return text;
+    let t = text;
+    while (t.length > 1 && ctx.measureText(t + '…').width > max) t = t.slice(0, -1);
+    return t + '…';
+  }
+  function draw() {
+    const size = cv.clientWidth, dpr = window.devicePixelRatio || 1;
+    if (cv.width !== Math.round(size * dpr)) { cv.width = Math.round(size * dpr); cv.height = Math.round(size * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+    const R = size / 2, r = R - 10;
+    ctx.translate(R, R);
+    const palette = ['--s1', '--s2', '--s3', '--s4', '--s5', '--s6'].map(css);
+    const gold = css('--gold'), line = css('--seg-line'), ink = '#1b1f3b';
+
+    if (!segs.length) {
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fillStyle = css('--surface'); ctx.fill();
+      ctx.fillStyle = css('--muted'); ctx.font = `500 ${Math.max(13, R * 0.06)}px ${css('--font-body')}`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(state.mode === 'prize' ? '獎項都抽完了' : '沒有可以抽的人了', 0, -R * 0.32);
+    } else {
+      ctx.save(); ctx.rotate(rot);
+      segs.forEach((s, i) => {
+        const a0 = -Math.PI / 2 + s.start;
+        let ci = i % palette.length;
+        if (i === segs.length - 1 && segs.length > 1 && ci === 0) ci = 2;
+        const col = palette[ci];
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, r, a0, a0 + s.ang); ctx.closePath();
+        ctx.fillStyle = col; ctx.fill();
+        if (segs.length > 1) { ctx.strokeStyle = line; ctx.lineWidth = 2; ctx.stroke(); }
+        ctx.save();
+        ctx.rotate(a0 + s.ang / 2);
+        const fs = Math.max(10, Math.min(R * 0.075, s.ang * r * 0.42, 24));
+        ctx.font = `700 ${fs}px ${css('--font-body')}`;
+        ctx.fillStyle = lum(col) > 0.55 ? ink : '#ffffff';
+        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        const txt = s.label + (s.tag ? ' ' + s.tag : '');
+        ctx.fillText(fit(txt, r * 0.66), r - 16, 0);
+        ctx.restore();
+      });
+      ctx.restore();
+    }
+    // rim + bulbs
+    ctx.beginPath(); ctx.arc(0, 0, R - 5, 0, TAU); ctx.strokeStyle = gold; ctx.lineWidth = 10; ctx.stroke();
+    for (let k = 0; k < 24; k++) {
+      const a = k / 24 * TAU + rot * 0.25;
+      ctx.beginPath(); ctx.arc(Math.cos(a) * (R - 5), Math.sin(a) * (R - 5), 2.6, 0, TAU);
+      ctx.fillStyle = k % 2 ? '#ffffff' : css('--accent'); ctx.fill();
+    }
+  }
+  function idxAt(angle) {
+    const a = ((-angle % TAU) + TAU) % TAU;
+    for (let i = 0; i < segs.length; i++) if (a >= segs[i].start && a < segs[i].start + segs[i].ang) return i;
+    return segs.length - 1;
+  }
+
+  // ---------- sound ----------
+  let audio;
+  function tick() {
+    if (state.muted) return;
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = 'triangle'; o.frequency.value = 1500;
+      g.gain.setValueAtTime(0.12, audio.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.05);
+      o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.06);
+    } catch (e) {}
+  }
+  function fanfare() {
+    if (state.muted || !audio) return;
+    [523, 659, 784, 1047].forEach((f, i) => {
+      const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime + i * 0.11;
+      o.type = 'square'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.06, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      o.connect(g).connect(audio.destination); o.start(t); o.stop(t + 0.26);
+    });
+  }
+
+  // ---------- background: candles bouncing between support & resistance ----------
+  const bg = $('#bg'), bx = bg.getContext('2d');
+  const STEP = 16;
+  let chan = { s: 2620, r: 2680 }, price = 2650, series = [], scroll = 0, yMin = 0, yMax = 0;
+  const fmt = v => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function nextCandle() {
+    const o = price, range = chan.r - chan.s, pos = (o - chan.s) / range;
+    let drift = pos > .85 ? -2.4 : pos < .15 ? 2.4 : (Math.random() - .5) * 1.4;
+    if (Math.random() < .025) { // breakout: the old level flips role
+      const up = pos > .5, shift = range * .6 * (up ? 1 : -1);
+      chan = { s: chan.s + shift, r: chan.r + shift }; drift = up ? 7 : -7;
+    }
+    const c = o + drift + (Math.random() - .5) * 7;
+    price = c;
+    return { o, c, h: Math.max(o, c) + Math.random() * 4, l: Math.min(o, c) - Math.random() * 4, s: chan.s, r: chan.r };
+  }
+  function fillSeries() {
+    const need = Math.ceil(innerWidth / STEP) + 3;
+    while (series.length < need) series.push(nextCandle());
+  }
+  function drawBg() {
+    const W = innerWidth, H = innerHeight, dpr = window.devicePixelRatio || 1;
+    if (bg.width !== Math.round(W * dpr) || bg.height !== Math.round(H * dpr)) { bg.width = Math.round(W * dpr); bg.height = Math.round(H * dpr); }
+    bx.setTransform(dpr, 0, 0, dpr, 0, 0); bx.clearRect(0, 0, W, H);
+    const last = series[series.length - 1];
+    let lo = Math.min(last.s, ...series.map(c => c.l)), hi = Math.max(last.r, ...series.map(c => c.h));
+    const pad = (hi - lo) * .2; lo -= pad; hi += pad;
+    if (!yMax) { yMin = lo; yMax = hi; } else { yMin += (lo - yMin) * .05; yMax += (hi - yMax) * .05; }
+    const y = v => H * .08 + (1 - (v - yMin) / (yMax - yMin)) * H * .84;
+    const a = +css('--chart-alpha') || .18, bull = css('--bull'), bear = css('--bear');
+    series.forEach((c, i) => {
+      const x = i * STEP - scroll + STEP / 2, col = c.c >= c.o ? bull : bear;
+      bx.globalAlpha = a; bx.strokeStyle = col; bx.fillStyle = col; bx.lineWidth = 1.2;
+      bx.beginPath(); bx.moveTo(x, y(c.h)); bx.lineTo(x, y(c.l)); bx.stroke();
+      const top = y(Math.max(c.o, c.c)), bh = Math.max(1.5, y(Math.min(c.o, c.c)) - top);
+      bx.fillRect(x - 4.5, top, 9, bh);
+    });
+    // SNR levels
+    bx.globalAlpha = Math.min(1, a * 2.6); bx.setLineDash([6, 6]); bx.lineWidth = 1.2;
+    bx.font = `500 12px ${css('--font-mono')}`; bx.textAlign = 'right'; bx.textBaseline = 'bottom';
+    [['R', last.r, bear], ['S', last.s, bull]].forEach(([t, v, col]) => {
+      bx.strokeStyle = col; bx.fillStyle = col;
+      bx.beginPath(); bx.moveTo(0, y(v)); bx.lineTo(W, y(v)); bx.stroke();
+      bx.fillText(`${t} ${fmt(v)}`, W - 12, y(v) - 4);
+    });
+    bx.setLineDash([]); bx.globalAlpha = 1;
+  }
+  let bgT = performance.now();
+  function bgLoop(now) {
+    const dt = Math.min(100, now - bgT); bgT = now;
+    scroll += dt * (spinning ? .09 : .022);
+    while (scroll >= STEP) { series.shift(); series.push(nextCandle()); scroll -= STEP; }
+    drawBg();
+    requestAnimationFrame(bgLoop);
+  }
+  fillSeries();
+  if (reduced) drawBg(); else requestAnimationFrame(bgLoop);
+  addEventListener('resize', () => { fillSeries(); drawBg(); });
+
+  // ---------- win: breakout through resistance + gold coins ----------
+  const cf = $('#confetti'), cx = cf.getContext('2d');
+  // Every prize is a resistance level: the last line of the list is the lowest, 頭獎 (first line) the highest.
+  // The winner's candles break level after level until they clear the prize they won.
+  function prizeLevels(prize) {
+    let names = [...new Set(parsePrizes().map(p => p.name))].reverse();
+    let k = names.indexOf(prize);
+    if (k < 0) { names = [prize]; k = 0; }
+    if (names.length > 6) { const s = Math.max(0, Math.min(k - 4, names.length - 6)); names = names.slice(s, s + 6); k -= s; }
+    const L = names.length;
+    const ys = names.map((_, j) => L === 1 ? .5 : .84 - j * (.64 / (L - 1)));
+    return { names, ys, k };
+  }
+  function breakoutPath(ys, k) {
+    const out = [], breaks = [];
+    let p = Math.min(.97, ys[0] + .12);
+    const add = (c, h) => { const o = p; out.push({ o, c, h: h ?? Math.min(o, c) - .015, l: Math.max(o, c) + .015 }); p = c; };
+    for (let j = 0; j <= k; j++) {
+      const lv = ys[j];
+      add(lv + .05); add(lv + .035, lv + .003); add(lv + .055);   // approach, test the level, pull back
+      add(lv - .045, lv - .06); breaks.push(out.length - 1);       // breakout candle closes above
+    }
+    const nx = ys[k + 1];
+    if (nx !== undefined) { add(nx + .045); add(nx + .035, nx + .003); add(nx + .06); } // rejected at the next prize
+    else add(p - .08);                                                                  // 頭獎: nothing above, keep running
+    return { out, breaks };
+  }
+  function confetti(res) {
+    if (reduced || !res) return;
+    const W = innerWidth, H = innerHeight, dpr = window.devicePixelRatio || 1;
+    cf.width = W * dpr; cf.height = H * dpr; cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const pw = Math.min(440, W - 32), ph = 280, px = (W - pw) / 2, py = Math.max(16, H * .34 - ph / 2);
+    const labelW = Math.min(130, pw * .34);
+    const area = { x: px + 16, y: py + 70, w: pw - 32 - labelW, h: ph - 84 };
+    const lv = prizeLevels(res.prize), path = breakoutPath(lv.ys, lv.k);
+    const N = path.out.length, CT = Math.min(140, 2600 / N), done = N * CT;
+    const winAt = (path.breaks[lv.k] + 1) * CT;
+    const C = { surf: css('--surface'), gold: css('--gold'), ink: css('--ink'), muted: css('--muted'),
+      bull: css('--bull'), bear: css('--bear'), disp: css('--font-display'), mono: css('--font-mono'), body: css('--font-body') };
+    const coins = Array.from({ length: 70 }, () => ({ x: Math.random() * W, y: -20 - Math.random() * H * .8, v: 3 + Math.random() * 4, p: Math.random() * TAU, r: 7 + Math.random() * 6 }));
+    const END = Math.max(done, winAt) + 2600, t0 = performance.now();
+    const yy = v => area.y + v * area.h;
+    const clip = (s, max) => { if (cx.measureText(s).width <= max) return s; while (s.length > 1 && cx.measureText(s + '…').width > max) s = s.slice(0, -1); return s + '…'; };
+    (function f(now) {
+      const t = now - t0;
+      cx.clearRect(0, 0, W, H);
+      cx.globalAlpha = t < 250 ? t / 250 : t > END - 500 ? Math.max(0, (END - t) / 500) : 1;
+      cx.fillStyle = C.surf; cx.strokeStyle = C.gold; cx.lineWidth = 2;
+      cx.beginPath(); cx.roundRect ? cx.roundRect(px, py, pw, ph, 16) : cx.rect(px, py, pw, ph); cx.fill(); cx.stroke();
+      const won = t >= winAt;
+      cx.textAlign = 'left'; cx.textBaseline = 'top';
+      cx.font = `500 12px ${C.mono}`; cx.fillStyle = C.gold;
+      cx.fillText(clip(`${res.person} · XAU/USD · M15`, pw - 32), px + 16, py + 14);
+      cx.font = `${won ? 24 : 17}px ${C.disp}`; cx.fillStyle = won ? C.bull : C.muted;
+      const head = won ? `BREAKOUT ↑ ${res.prize}` : `${res.person} 正在突破…`;
+      cx.fillText(clip(head, pw - 32), px + 16, py + 32);
+      // one resistance line per prize
+      lv.names.forEach((name, j) => {
+        const y = yy(lv.ys[j]);
+        const broken = path.breaks[j] !== undefined && t >= (path.breaks[j] + 1) * CT;
+        const target = j === lv.k;
+        cx.setLineDash(broken ? [] : [6, 5]);
+        cx.lineWidth = target && won ? 2.5 : 1.3;
+        cx.strokeStyle = target && won ? (Math.floor(t / 160) % 2 ? C.gold : C.bull) : broken ? C.bull : C.bear;
+        cx.globalAlpha *= target || broken ? 1 : .8;
+        cx.beginPath(); cx.moveTo(area.x, y); cx.lineTo(area.x + area.w + 6, y); cx.stroke(); cx.setLineDash([]);
+        cx.font = `${target ? 700 : 500} 12px ${C.body}`; cx.textAlign = 'left'; cx.textBaseline = 'middle';
+        cx.fillStyle = target && won ? C.gold : broken ? C.bull : C.bear;
+        cx.fillText(clip((broken ? '✓ ' : 'R ') + name, labelW - 6), area.x + area.w + 12, y);
+        cx.globalAlpha = t < 250 ? t / 250 : t > END - 500 ? Math.max(0, (END - t) / 500) : 1;
+      });
+      // candles
+      const step = area.w / N, shown = Math.min(N, Math.floor(t / CT) + 1);
+      for (let i = 0; i < shown; i++) {
+        let { o, c, h, l } = path.out[i];
+        if (i === shown - 1 && t < done) { const q = (t % CT) / CT; c = o + (c - o) * q; h = Math.min(h, o, c); l = Math.max(l, o, c); }
+        const x = area.x + step * i + step / 2, col = c <= o ? C.bull : C.bear;
+        cx.strokeStyle = col; cx.fillStyle = col; cx.lineWidth = 1.3;
+        cx.beginPath(); cx.moveTo(x, yy(h)); cx.lineTo(x, yy(l)); cx.stroke();
+        cx.fillRect(x - step * .32, yy(Math.min(o, c)), step * .64, Math.max(2, Math.abs(c - o) * area.h));
+      }
+      const broke = won;
+      // gold coins
+      if (broke) coins.forEach(k => {
+        k.y += k.v; k.p += .15;
+        const sx = Math.abs(Math.cos(k.p));
+        cx.save(); cx.translate(k.x, k.y); cx.scale(Math.max(.15, sx), 1);
+        cx.beginPath(); cx.arc(0, 0, k.r, 0, TAU); cx.fillStyle = C.gold; cx.fill();
+        cx.lineWidth = 1.5; cx.strokeStyle = '#a8780a'; cx.stroke();
+        if (sx > .5) { cx.fillStyle = '#7a5600'; cx.font = `700 ${k.r}px ${C.mono}`; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText('$', 0, 1); }
+        cx.restore();
+      });
+      cx.globalAlpha = 1;
+      if (t < END) requestAnimationFrame(f); else cx.clearRect(0, 0, W, H);
+    })(t0);
+  }
+
+  // ---------- spin ----------
+  function spin() {
+    if (spinning) return;
+    const who = $('#who').value;
+    if (!segs.length || !who) return;
+    tick(); // unlock audio inside the click
+    const total = segs.reduce((s, x) => s + x.w, 0);
+    let pick = Math.random() * total, target = 0;
+    for (let i = 0; i < segs.length; i++) { pick -= segs[i].w; if (pick < 0) { target = i; break; } }
+    const s = segs[target];
+    const land = s.start + s.ang * (0.15 + Math.random() * 0.7);
+    const from = rot;
+    const delta = (((-land - from) % TAU) + TAU) % TAU;
+    const to = from + (reduced ? 1 : 7) * TAU + delta;
+    const dur = reduced ? 1200 : 5600;
+    const t0 = performance.now();
+    let last = idxAt(rot);
+    setBusy(true);
+    const MSG = ['價格測試阻力中…', '等待 K 棒收線…', '多空激戰中…', '觀察 SNR 反應…', '金價波動加劇…'];
+    let mi = 0;
+    $('#banner').className = 'banner'; $('#banner').textContent = MSG[0];
+    const msgT = setInterval(() => { $('#banner').textContent = MSG[++mi % MSG.length]; }, 1000);
+    (function step(now) {
+      const t = Math.min(1, (now - t0) / dur);
+      const e = 1 - Math.pow(1 - t, 4);
+      rot = from + (to - from) * e;
+      const i = idxAt(rot); if (i !== last) { tick(); last = i; }
+      draw();
+      if (t < 1) return requestAnimationFrame(step);
+      rot = to % TAU;
+      clearInterval(msgT);
+      finish(s.key, who);
+    })(t0);
+  }
+  function finish(key, who) {
+    const res = state.mode === 'prize' ? { person: who, prize: key } : { person: key, prize: who };
+    state.results.push(res); save();
+    const b = $('#banner');
+    b.className = 'banner win';
+    b.innerHTML = '';
+    const p = document.createElement('div');
+    const n1 = document.createElement('b'); n1.textContent = res.person;
+    const n2 = document.createElement('b'); n2.textContent = res.prize;
+    p.append('📈 突破成功！', n1, ' 抽中 ', n2);
+    b.append(p);
+    confetti(res); fanfare();
+    spinning = false; setBusy(false);
+    render();
+  }
+  function setBusy(v) {
+    spinning = v;
+    ['#hub', '#spin', '#who', '#prizes', '#people', '#unlimited', '#repeat', '#shuffle', '#sample', '#undo', '#clear']
+      .forEach(s => $(s).disabled = v);
+  }
+
+  // ---------- render ----------
+  function render() {
+    buildSegs();
+    const prizeMode = state.mode === 'prize';
+    $('#whoLabel').textContent = prizeMode ? '這輪抽獎人' : '這輪要抽的獎';
+
+    const sel = $('#who'), prev = sel.value;
+    const opts = prizeMode
+      ? peopleLeft()
+      : prizeStock().filter(p => p.left > 0).map(p => p.name);
+    sel.innerHTML = '';
+    if (!opts.length) {
+      const o = document.createElement('option'); o.value = ''; o.textContent = prizeMode ? '（沒有人了）' : '（沒有獎了）'; sel.append(o);
+    }
+    [...new Set(opts)].forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.append(o); });
+    if (opts.includes(prev)) sel.value = prev;
+    else if (!prizeMode && opts.length) sel.value = opts[opts.length - 1]; // start from the smallest prize
+
+    const ready = segs.length > 0 && opts.length > 0;
+    if (!spinning) { $('#spin').disabled = !ready; $('#hub').disabled = !ready; }
+
+    const ps = prizeStock();
+    $('#prizeCount').textContent = state.unlimited ? `${ps.length} 種` : `剩 ${ps.reduce((s, p) => s + Math.max(0, p.left), 0)} 份`;
+    const ppl = parsePeople();
+    $('#peopleCount').textContent = state.repeat ? `${ppl.length} 人` : `剩 ${peopleLeft().length}/${ppl.length} 人`;
+    $('#unlimited').checked = state.unlimited;
+    $('#repeat').checked = state.repeat;
+    $('#mute').textContent = state.muted ? '🔇 靜音' : '🔊 音效';
+    $('#mute').setAttribute('aria-pressed', state.muted);
+
+    const ol = $('#results'); ol.innerHTML = '';
+    $('#resCount').textContent = state.results.length ? `${state.results.length} 筆` : '';
+    if (!state.results.length) {
+      const li = document.createElement('p'); li.className = 'empty'; li.textContent = '還沒有人中獎，轉一下吧。'; ol.append(li);
+    }
+    state.results.forEach((r, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = '<span class="n"></span><span class="p"></span><span class="z"></span>';
+      li.children[0].textContent = String(i + 1).padStart(2, '0');
+      li.children[1].textContent = r.person;
+      li.children[2].textContent = r.prize;
+      ol.append(li);
+    });
+    if (!spinning) { $('#undo').disabled = !state.results.length; $('#clear').disabled = !state.results.length; $('#copy').disabled = !state.results.length; }
+    draw();
+  }
+
+  // ---------- events ----------
+  $('#prizes').value = state.prizes;
+  $('#people').value = state.people;
+  $('#prizes').addEventListener('input', e => { state.prizes = e.target.value; save(); render(); });
+  $('#people').addEventListener('input', e => { state.people = e.target.value; save(); render(); });
+  $('#unlimited').addEventListener('change', e => { state.unlimited = e.target.checked; save(); render(); });
+  $('#repeat').addEventListener('change', e => { state.repeat = e.target.checked; save(); render(); });
+  $('#hub').addEventListener('click', spin);
+  $('#spin').addEventListener('click', spin);
+  $('#mute').addEventListener('click', () => { state.muted = !state.muted; save(); render(); });
+  $('#shuffle').addEventListener('click', () => {
+    const a = parsePeople();
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    state.people = a.join('\n'); $('#people').value = state.people; save(); render();
+  });
+  $('#sample').addEventListener('click', () => {
+    Object.assign(state, SAMPLE); $('#prizes').value = state.prizes; $('#people').value = state.people; save(); render();
+  });
+  $('#undo').addEventListener('click', () => { state.results.pop(); save(); render(); });
+  let clearArmed = null;
+  $('#clear').addEventListener('click', e => {
+    const btn = e.currentTarget;
+    if (!clearArmed) {
+      btn.textContent = '再按一次確認清除';
+      clearArmed = setTimeout(() => { clearArmed = null; btn.textContent = '清除全部結果'; }, 3000);
+      return;
+    }
+    clearTimeout(clearArmed); clearArmed = null; btn.textContent = '清除全部結果';
+    state.results = []; save(); render();
+    $('#banner').className = 'banner'; $('#banner').textContent = '結果已清除，可以重新開始';
+  });
+  $('#copy').addEventListener('click', e => {
+    const btn = e.currentTarget;
+    const text = state.results.map((r, i) => `${i + 1}. ${r.person} － ${r.prize}`).join('\n');
+    const done = () => { btn.textContent = '已複製'; setTimeout(() => btn.textContent = '複製名單', 1500); };
+    navigator.clipboard?.writeText(text).then(done).catch(() => {
+      const ta = document.createElement('textarea'); ta.value = text; document.body.append(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (err) {} ta.remove();
+    });
+  });
+
+  new ResizeObserver(draw).observe(cv);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+  new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  document.fonts?.ready.then(draw);
+  render();
+})();
+</script>
+</body>
+</html>
