@@ -122,6 +122,14 @@ textarea {
 .ghost:hover { border-color: var(--muted); }
 .ghost.danger { color: var(--accent); }
 .ghost:disabled { opacity: .45; cursor: default; }
+input.text {
+  font: inherit; font-size: 15px; flex: 1 1 180px; min-width: 0; padding: 6px 10px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+.lists { display: grid; gap: 6px; }
+.list-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; background: var(--bg); }
+.list-item .nm { font-weight: 700; overflow-wrap: anywhere; }
+.list-item .nm small { font-weight: 400; color: var(--muted); font-family: var(--font-mono); font-size: 12px; margin-left: 6px; }
 ol.results { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; max-height: 320px; overflow-y: auto; }
 ol.results li { display: grid; grid-template-columns: 2.2em minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 8px; background: var(--bg); }
 ol.results .n { font-family: var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
@@ -183,6 +191,16 @@ ol.results .z { color: var(--accent); text-align: right; overflow-wrap: anywhere
       </div>
 
       <div class="card">
+        <h2>常用抽獎人名單 <small id="listCount"></small></h2>
+        <div class="row">
+          <input class="text" id="listName" type="text" maxlength="30" placeholder="名單名稱，例如：黃金群成員">
+          <button class="ghost" id="saveList" type="button">存下目前的抽獎人</button>
+        </div>
+        <div class="lists" id="lists"></div>
+        <p class="hint" id="listMsg" aria-live="polite">存起來之後，下次點一下名單就能把抽獎人整批帶回來。</p>
+      </div>
+
+      <div class="card">
         <h2>中獎名單 <small id="resCount"></small></h2>
         <ol class="results" id="results"></ol>
         <div class="row">
@@ -207,7 +225,7 @@ ol.results .z { color: var(--accent); text-align: right; overflow-wrap: anywhere
   };
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  let state = { ...SAMPLE, mode: 'prize', unlimited: false, repeat: false, muted: false, results: [] };
+  let state = { ...SAMPLE, mode: 'prize', unlimited: false, repeat: false, muted: false, results: [], lists: {} };
   try { const s = JSON.parse(localStorage.getItem(KEY)); if (s) state = { ...state, ...s }; } catch (e) {}
   state.mode = 'person'; // the wheel always shows people; the prize is picked before each spin
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
@@ -536,7 +554,7 @@ ol.results .z { color: var(--accent); text-align: right; overflow-wrap: anywhere
   }
   function setBusy(v) {
     spinning = v;
-    ['#hub', '#spin', '#who', '#prizes', '#people', '#unlimited', '#repeat', '#shuffle', '#sample', '#undo', '#clear']
+    ['#hub', '#spin', '#who', '#prizes', '#people', '#unlimited', '#repeat', '#shuffle', '#sample', '#undo', '#clear', '#saveList']
       .forEach(s => $(s).disabled = v);
   }
 
@@ -606,6 +624,49 @@ ol.results .z { color: var(--accent); text-align: right; overflow-wrap: anywhere
     Object.assign(state, SAMPLE); $('#prizes').value = state.prizes; $('#people').value = state.people; save(); render();
   });
   $('#undo').addEventListener('click', () => { state.results.pop(); save(); render(); });
+
+  // ---------- saved participant lists ----------
+  const listMsg = t => { $('#listMsg').textContent = t; };
+  let delArmed = null;
+  function renderLists() {
+    const box = $('#lists'), names = Object.keys(state.lists || {});
+    box.innerHTML = '';
+    $('#listCount').textContent = names.length ? `${names.length} 份` : '';
+    names.forEach(name => {
+      const count = state.lists[name].split('\n').filter(s => s.trim()).length;
+      const row = document.createElement('div'); row.className = 'list-item';
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = name;
+      const sm = document.createElement('small'); sm.textContent = `${count} 人`; nm.append(sm);
+      const load = document.createElement('button'); load.type = 'button'; load.className = 'ghost'; load.textContent = '帶入';
+      const del = document.createElement('button'); del.type = 'button'; del.className = 'ghost danger'; del.textContent = '刪除';
+      load.addEventListener('click', () => {
+        if (spinning) return;
+        state.people = state.lists[name]; $('#people').value = state.people; $('#listName').value = name;
+        save(); render(); listMsg(`已帶入「${name}」，共 ${count} 人。`);
+      });
+      del.addEventListener('click', () => {
+        if (delArmed !== name) {
+          delArmed = name; del.textContent = '再按一次確認';
+          setTimeout(() => { if (delArmed === name) { delArmed = null; del.textContent = '刪除'; } }, 3000);
+          return;
+        }
+        delArmed = null; delete state.lists[name]; save(); renderLists(); listMsg(`已刪除「${name}」。`);
+      });
+      row.append(nm, load, del); box.append(row);
+    });
+  }
+  $('#saveList').addEventListener('click', () => {
+    const name = $('#listName').value.trim();
+    const people = parsePeople();
+    if (!name) { listMsg('先幫名單取個名字，再按存下。'); $('#listName').focus(); return; }
+    if (!people.length) { listMsg('抽獎人是空的，先輸入名字再存。'); return; }
+    const existed = !!state.lists[name];
+    state.lists = { ...state.lists, [name]: people.join('\n') };
+    save(); renderLists();
+    listMsg(existed ? `已更新「${name}」，共 ${people.length} 人。` : `已存下「${name}」，共 ${people.length} 人。`);
+  });
+  $('#listName').addEventListener('keydown', e => { if (e.key === 'Enter') $('#saveList').click(); });
+  renderLists();
   let clearArmed = null;
   $('#clear').addEventListener('click', e => {
     const btn = e.currentTarget;
